@@ -21,13 +21,19 @@ jobs:
       - uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
-
+      - name: Read chart version
+        id: chart
+        run: |
+          VERSION=$(grep '^version:' Chart.yaml | awk '{print $2}')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Bump version and push tag
         id: tag
         uses: mathieudutour/github-tag-action@v6.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           default_bump: patch
+          release_branches: release
+          custom_tag: ${{ steps.chart.outputs.version }}
           tag_prefix: v
 
       - name: Install Helm
