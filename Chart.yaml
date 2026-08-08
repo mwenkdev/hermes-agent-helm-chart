@@ -4,7 +4,7 @@ description: Cloud-native Helm chart for Nous Research's Hermes Agent
 type: application
 version: 0.0.0-dev
 # renovate: datasource=github-tags depName=NousResearch/hermes-agent versioning=loose
-appVersion: v2026.6.19
+appVersion: v2026.8.3
 kubeVersion: ">=1.25.0-0"
 keywords:
   - hermes
