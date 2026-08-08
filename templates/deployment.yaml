@@ -283,9 +283,9 @@ spec:
               mountPath: /tmp
             - name: run
               mountPath: /run
-            {{- if .Values.browser.shm.enabled }}
+            {{- if .Values.browser.sharedMemory.enabled }}
             - name: dshm
-              mountPath: {{ .Values.browser.shm.mountPath }}
+              mountPath: {{ .Values.browser.sharedMemory.mountPath }}
             {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -308,11 +308,11 @@ spec:
           emptyDir: {}
         - name: run
           emptyDir: {}
-        {{- if .Values.browser.shm.enabled }}
+        {{- if .Values.browser.sharedMemory.enabled }}
         - name: dshm
           emptyDir:
             medium: Memory
-            sizeLimit: {{ .Values.browser.shm.sizeLimit | quote }}
+            sizeLimit: {{ .Values.browser.sharedMemory.sizeLimit | quote }}
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
