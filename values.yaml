@@ -2,9 +2,9 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: ghcr.io/michaelsp/hermes-agent/docker
-  # Defaults to Chart.appVersion, which tracks the upstream repository ref.
-  # tag: "v2026.6.19"
+  repository: nousresearch/hermes-agent
+  # Yes, this was set to appVersion, but moved it here so we're nice and explicit on which tag we're using
+  tag: "v2026.8.3"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -29,7 +29,7 @@ bootstrap:
   enabled: true
   # When true, overwrite the persisted config/SOUL with Helm-rendered content.
   # When false, seed only if the file does not already exist in the PVC.
-  overwrite: true
+  overwrite: false
   # Optionally consume config bootstrap data from an externally managed
   # ConfigMap instead of the chart-managed one.
   existingConfigMap: ""
@@ -41,37 +41,7 @@ config:
   # config.values.
   raw: ""
   # Partial Hermes config.yaml written into HERMES_HOME/config.yaml.
-  values:
-    model:
-      default: anthropic/claude-opus-4.6
-      provider: auto
-      base_url: https://openrouter.ai/api/v1
-    agent:
-      max_turns: 90
-      gateway_timeout: 1800
-      restart_drain_timeout: 60
-      tool_use_enforcement: auto
-    terminal:
-      backend: local
-      cwd: .
-      timeout: 180
-    display:
-      tool_progress: all
-      interim_assistant_messages: true
-    browser:
-      inactivity_timeout: 120
-      command_timeout: 30
-      allow_private_urls: false
-    compression:
-      enabled: true
-      threshold: 0.5
-      target_ratio: 0.2
-      protect_last_n: 20
-    security:
-      redact_secrets: true
-      tirith_enabled: true
-      tirith_fail_open: true
-
+  values: {}
 soul:
   text: ""
 
@@ -80,9 +50,6 @@ env:
   VISION_TOOLS_DEBUG: "false"
   MOA_TOOLS_DEBUG: "false"
   IMAGE_TOOLS_DEBUG: "false"
-  HERMES_HUMAN_DELAY_MODE: "off"
-  HERMES_HUMAN_DELAY_MIN_MS: "800"
-  HERMES_HUMAN_DELAY_MAX_MS: "2500"
   GATEWAY_ALLOW_ALL_USERS: "false"
   WHATSAPP_ENABLED: "false"
   WHATSAPP_ALLOWED_USERS: ""
@@ -108,6 +75,7 @@ extraEnv:
     value: "1"
 extraEnvFrom: []
 
+# Option 1: chart-managed Secret or reference to an existing Secret.
 secrets:
   existingSecret: ""
   annotations: {}
@@ -168,6 +136,8 @@ secrets:
   WEIXIN_TOKEN: ""
   BLUEBUBBLES_SERVER_URL: ""
   BLUEBUBBLES_PASSWORD: ""
+
+# Option 2: external Secret - for secrets that are managed by an external system
 
 externalSecret:
   enabled: false
@@ -238,9 +208,11 @@ persistence:
   storageClass: ""
   annotations: {}
 
+# Optional memory-backed /dev/shm volume for Chromium/Playwright.
+# Enable this if local browser automation needs more shared memory.
 browser:
-  shm:
-    enabled: true
+  sharedMemory:
+    enabled: false
     mountPath: /dev/shm
     sizeLimit: 1Gi
 
@@ -320,19 +292,23 @@ probes:
 
 npmPackages: []
 
-resources:
-  requests:
-    cpu: 500m
-    memory: 1Gi
-  limits:
-    memory: 4Gi
 
+# Example resource requests/limits.
+#resources:
+#  requests:
+#    memory: 1Gi
+#  limits:
+#    memory: 4Gi
+
+resources: {}
 terminationGracePeriodSeconds: 120
 
 podAnnotations: {}
 deploymentAnnotations: {}
 podLabels: {}
 
+# The official Hermes image runs as UID/GID 10000.
+# Override these values when using HERMES_UID or a custom image.
 podSecurityContext:
   runAsUser: 10000
   runAsGroup: 10000

@@ -3,10 +3,7 @@ name: Release Chart
 on:
   push:
     branches:
-      - main
-    paths-ignore:
-      - Dockerfile
-      - .github/workflows/docker-release.yaml
+      - release
 
 concurrency:
   group: chart-release-${{ github.ref }}
