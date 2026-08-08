@@ -4,7 +4,7 @@
   "properties": {
     "replicaCount": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 0
     },
     "strategy": {
       "type": "object",
@@ -476,7 +476,7 @@
       "then": {
         "properties": {
           "replicaCount": {
-            "const": 1
+            "maximum": 1
           },
           "strategy": {
             "type": "object",

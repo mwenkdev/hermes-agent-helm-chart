@@ -20,7 +20,7 @@ tests:
       - negative-persistent-replicas-values.yaml
     asserts:
       - failedTemplate:
-          errorMessageContains: "value must be 1"
+          errorMessageContains: "maximum: got 2, want 1"
 
   - it: fails when virtualService is enabled without gateways
     set:

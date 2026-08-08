@@ -22,6 +22,44 @@ tests:
           value: Recreate
         template: deployment.yaml
 
+  - it: allows scaling to zero with persistence enabled
+    set:
+      persistence.enabled: true
+      replicaCount: 0
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 0
+        template: deployment.yaml
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+        template: deployment.yaml
+
+  - it: allows a single replica with persistence enabled
+    set:
+      persistence.enabled: true
+      replicaCount: 1
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+        template: deployment.yaml
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+        template: deployment.yaml
+
+  - it: allows multiple replicas when persistence is disabled
+    set:
+      persistence.enabled: false
+      replicaCount: 2
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 2
+        template: deployment.yaml
+
   - it: mounts /run as emptyDir
     asserts:
       - contains:
