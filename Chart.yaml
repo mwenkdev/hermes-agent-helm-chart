@@ -2,8 +2,7 @@ apiVersion: v2
 name: hermes-agent
 description: Cloud-native Helm chart for Nous Research's Hermes Agent
 type: application
-version: 0.0.0-dev
-# renovate: datasource=github-tags depName=NousResearch/hermes-agent versioning=loose
+version: 0.1.0
 appVersion: v2026.8.3
 kubeVersion: ">=1.25.0-0"
 keywords:
@@ -18,5 +17,7 @@ home: https://hermes-agent.nousresearch.com
 icon: https://raw.githubusercontent.com/NousResearch/hermes-agent/main/landingpage/icon-192.png
 sources:
   - https://github.com/nousresearch/hermes-agent
+  - https://github.com/MichaelSp/hermes-agent-helm-chart
 maintainers:
-  - name: hermes-agent-community
+  - name: Michael Wenk
+    url: https://github.com/mwenkdev
