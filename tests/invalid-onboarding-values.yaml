@@ -1,0 +1,11 @@
+# Negative fixture: the onboarding gate needs a persistent HERMES_HOME so the
+# interactive setup and the completion latch survive pod replacement.
+onboarding:
+  enabled: true
+  requirements:
+    provider: true
+    platforms:
+      - telegram
+
+persistence:
+  enabled: false

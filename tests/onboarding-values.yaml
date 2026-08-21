@@ -1,0 +1,27 @@
+# Onboarding gate: the Des scenario (Photon primary, Telegram operator path).
+onboarding:
+  enabled: true
+  requirements:
+    provider: true
+    platforms:
+      - photon
+      - telegram
+  validationTimeoutSeconds: 15
+  pollIntervalSeconds: 10
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+progressDeadlineSeconds: 3600
+
+persistence:
+  enabled: true
+
+secrets:
+  OPENROUTER_API_KEY: test-openrouter-key
+  TELEGRAM_BOT_TOKEN: test-telegram-token
+
+extraEnvFrom:
+  - configMapRef:
+      name: hermes-extra-env

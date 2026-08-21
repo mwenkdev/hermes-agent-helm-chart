@@ -1,0 +1,314 @@
+suite: onboarding gate
+templates:
+  - deployment.yaml
+  - onboarding-configmap.yaml
+  - configmap.yaml
+  - secret.yaml
+
+tests:
+  - it: renders no onboarding ConfigMap by default
+    templates:
+      - onboarding-configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no onboarding init container, volume or checksum by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.initContainers
+          any: true
+          content:
+            name: onboarding-gate
+        template: deployment.yaml
+      - notContains:
+          path: spec.template.spec.volumes
+          any: true
+          content:
+            name: onboarding
+        template: deployment.yaml
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/onboarding"]
+        template: deployment.yaml
+      - notExists:
+          path: spec.progressDeadlineSeconds
+        template: deployment.yaml
+
+  - it: renders the onboarding ConfigMap when enabled
+    values:
+      - onboarding-values.yaml
+    templates:
+      - onboarding-configmap.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hermes-agent-onboarding
+      - exists:
+          path: data["check.py"]
+      - exists:
+          path: data["wait.sh"]
+      - equal:
+          path: data["requirements.json"]
+          value: |
+            {"platforms":["photon","telegram"],"provider":true,"schemaVersion":1,"validatorVersion":1}
+
+  - it: sorts platform names so the requirements hash is order-insensitive
+    set:
+      onboarding.enabled: true
+      onboarding.requirements.platforms:
+        - telegram
+        - photon
+    templates:
+      - onboarding-configmap.yaml
+    asserts:
+      - equal:
+          path: data["requirements.json"]
+          value: |
+            {"platforms":["photon","telegram"],"provider":true,"schemaVersion":1,"validatorVersion":1}
+
+  - it: keeps bootstrap first and puts the onboarding gate immediately after it
+    values:
+      - onboarding-values.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: bootstrap-config
+        template: deployment.yaml
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: onboarding-gate
+        template: deployment.yaml
+
+  - it: keeps the gate ahead of npm-install when both are enabled
+    values:
+      - onboarding-values.yaml
+    set:
+      npmPackages:
+        - "@modelcontextprotocol/server-filesystem"
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: bootstrap-config
+        template: deployment.yaml
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: onboarding-gate
+        template: deployment.yaml
+      - equal:
+          path: spec.template.spec.initContainers[2].name
+          value: npm-install
+        template: deployment.yaml
+
+  - it: reuses the main image and invokes the wrapper through /bin/sh
+    values:
+      - onboarding-values.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[1].image
+          value: nousresearch/hermes-agent:v2026.8.3
+        template: deployment.yaml
+      - equal:
+          path: spec.template.spec.initContainers[1].command
+          value:
+            - /bin/sh
+        template: deployment.yaml
+      - equal:
+          path: spec.template.spec.initContainers[1].args
+          value:
+            - /opt/hermes-chart/onboarding/wait.sh
+        template: deployment.yaml
+
+  - it: mounts the same Hermes home plus a read-only script mount
+    values:
+      - onboarding-values.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[1].volumeMounts
+          content:
+            name: data
+            mountPath: /opt/data
+        template: deployment.yaml
+      - contains:
+          path: spec.template.spec.initContainers[1].volumeMounts
+          content:
+            name: onboarding
+            mountPath: /opt/hermes-chart/onboarding
+            readOnly: true
+        template: deployment.yaml
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: onboarding
+            configMap:
+              name: RELEASE-NAME-hermes-agent-onboarding
+        template: deployment.yaml
+
+  - it: gives the gate the same HERMES_HOME, secret env and envFrom as the gateway
+    values:
+      - onboarding-values.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: HERMES_HOME
+            value: "/opt/data"
+        template: deployment.yaml
+      - contains:
+          path: spec.template.spec.initContainers[1].envFrom
+          content:
+            secretRef:
+              name: RELEASE-NAME-hermes-agent-secrets
+              optional: true
+        template: deployment.yaml
+      - contains:
+          path: spec.template.spec.initContainers[1].envFrom
+          content:
+            configMapRef:
+              name: hermes-extra-env
+        template: deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            secretRef:
+              name: RELEASE-NAME-hermes-agent-secrets
+              optional: true
+        template: deployment.yaml
+
+  - it: passes an existing Secret through to the gate
+    set:
+      onboarding.enabled: true
+      secrets.existingSecret: hermes-external-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[1].envFrom
+          content:
+            secretRef:
+              name: hermes-external-secret
+        template: deployment.yaml
+
+  - it: applies onboarding.resources and the shared securityContext
+    values:
+      - onboarding-values.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[1].resources.requests.cpu
+          value: 50m
+        template: deployment.yaml
+      - equal:
+          path: spec.template.spec.initContainers[1].securityContext.allowPrivilegeEscalation
+          value: false
+        template: deployment.yaml
+
+  - it: renders the onboarding checksum annotation when enabled
+    values:
+      - onboarding-values.yaml
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/onboarding"]
+        template: deployment.yaml
+
+  - it: changes the pod-template checksum when the requirements change
+    values:
+      - onboarding-values.yaml
+    set:
+      onboarding.requirements.platforms:
+        - discord
+    asserts:
+      # A different requirement set must not reuse the two-platform checksum.
+      - notEqual:
+          path: spec.template.metadata.annotations["checksum/onboarding"]
+          value: 13614ef1b7f6b9cd92c8ef96f6bb2c61a0353f1910c5435c0b4a133b383dc315
+        template: deployment.yaml
+
+  - it: supports a photon-only requirement
+    set:
+      onboarding.enabled: true
+      onboarding.requirements.platforms:
+        - photon
+    templates:
+      - onboarding-configmap.yaml
+    asserts:
+      - equal:
+          path: data["requirements.json"]
+          value: |
+            {"platforms":["photon"],"provider":true,"schemaVersion":1,"validatorVersion":1}
+
+  - it: supports a telegram-only requirement
+    set:
+      onboarding.enabled: true
+      onboarding.requirements.platforms:
+        - telegram
+    templates:
+      - onboarding-configmap.yaml
+    asserts:
+      - equal:
+          path: data["requirements.json"]
+          value: |
+            {"platforms":["telegram"],"provider":true,"schemaVersion":1,"validatorVersion":1}
+
+  - it: supports a discord-only requirement
+    set:
+      onboarding.enabled: true
+      onboarding.requirements.platforms:
+        - discord
+    templates:
+      - onboarding-configmap.yaml
+    asserts:
+      - equal:
+          path: data["requirements.json"]
+          value: |
+            {"platforms":["discord"],"provider":true,"schemaVersion":1,"validatorVersion":1}
+
+  - it: supports requiring no platforms at all
+    set:
+      onboarding.enabled: true
+      onboarding.requirements.provider: true
+    templates:
+      - onboarding-configmap.yaml
+    asserts:
+      - equal:
+          path: data["requirements.json"]
+          value: |
+            {"platforms":[],"provider":true,"schemaVersion":1,"validatorVersion":1}
+
+  - it: propagates the poll and timeout values to the gate
+    values:
+      - onboarding-values.yaml
+    set:
+      onboarding.pollIntervalSeconds: 30
+      onboarding.validationTimeoutSeconds: 45
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: ONBOARDING_POLL_INTERVAL_SECONDS
+            value: "30"
+        template: deployment.yaml
+      - contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: ONBOARDING_VALIDATION_TIMEOUT_SECONDS
+            value: "45"
+        template: deployment.yaml
+
+  - it: renders progressDeadlineSeconds when set
+    values:
+      - onboarding-values.yaml
+    asserts:
+      - equal:
+          path: spec.progressDeadlineSeconds
+          value: 3600
+        template: deployment.yaml
+
+  - it: does not render onboarding resources in operator mode
+    values:
+      - onboarding-values.yaml
+      - operator-values.yaml
+    templates:
+      - onboarding-configmap.yaml
+      - deployment.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

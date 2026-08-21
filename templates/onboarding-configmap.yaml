@@ -1,0 +1,20 @@
+{{- if not .Values.operator.enabled }}
+{{- if .Values.onboarding.enabled }}
+{{- if not .Values.persistence.enabled }}
+{{- fail "onboarding.enabled=true requires persistence.enabled=true: interactive setup and the completion latch must survive pod replacement" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hermes-agent.onboardingConfigMapName" . }}
+  labels:
+    {{- include "hermes-agent.labels" . | nindent 4 }}
+data:
+  requirements.json: |
+    {{- include "hermes-agent.onboardingRequirements" . | nindent 4 }}
+  check.py: |
+    {{- .Files.Get "files/onboarding/check.py" | nindent 4 }}
+  wait.sh: |
+    {{- .Files.Get "files/onboarding/wait.sh" | nindent 4 }}
+{{- end }}
+{{- end }}
