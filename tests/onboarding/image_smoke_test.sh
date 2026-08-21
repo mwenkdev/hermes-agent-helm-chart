@@ -24,7 +24,23 @@ if [ -z "$image" ]; then
 fi
 
 workdir="$(mktemp -d)"
-trap 'rm -rf "$workdir"' EXIT
+
+# The validator runs as the image's own user and seeds HERMES_HOME with
+# restrictive-mode state directories (logs/, sessions/, ...), which the host
+# user cannot then delete. Hand ownership back from inside a container before
+# touching those paths.
+reclaim_workdir() {
+    docker run --rm -v "$workdir:/work" \
+        --entrypoint chown "$image" -R "$(id -u):$(id -g)" /work \
+        >/dev/null 2>&1 || true
+}
+
+cleanup() {
+    reclaim_workdir
+    rm -rf "$workdir"
+}
+trap cleanup EXIT
+
 mkdir -p "$workdir/home" "$workdir/scripts"
 cp "${CHART_ROOT}/files/onboarding/check.py" "$workdir/scripts/"
 chmod -R a+rwX "$workdir"
@@ -34,6 +50,7 @@ run_case() {
     local requirements="$2"
     local expected="$3"
 
+    reclaim_workdir
     printf '%s' "$requirements" > "$workdir/scripts/requirements.json"
     rm -f "$workdir/home/.helm-onboarding-complete.json"
 
@@ -49,6 +66,7 @@ run_case() {
     set -e
 
     printf '%s\n' "$output"
+    reclaim_workdir
     if [ "$status" -ne "$expected" ]; then
         echo "FAIL [$label]: expected exit ${expected}, got ${status}" >&2
         exit 1
