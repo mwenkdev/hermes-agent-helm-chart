@@ -49,6 +49,47 @@ tests:
       - failedTemplate:
           errorMessageContains: "tenant/id"
 
+  - it: fails when an unsupported onboarding platform is required
+    set:
+      onboarding.enabled: true
+      onboarding.requirements.platforms:
+        - slack
+    asserts:
+      - failedTemplate:
+          errorMessageContains: "value must be one of 'photon', 'telegram', 'discord'"
+
+  - it: fails when an onboarding platform is listed twice
+    set:
+      onboarding.enabled: true
+      onboarding.requirements.platforms:
+        - telegram
+        - telegram
+    asserts:
+      - failedTemplate:
+          errorMessageContains: "items at index 0 and 1 are equal"
+
+  - it: fails when onboarding is enabled without persistence
+    values:
+      - invalid-onboarding-values.yaml
+    asserts:
+      - failedTemplate:
+          errorMessageContains: "persistence/enabled"
+
+  - it: fails when progressDeadlineSeconds is not a positive integer
+    set:
+      progressDeadlineSeconds: 0
+    asserts:
+      - failedTemplate:
+          errorMessageContains: "progressDeadlineSeconds"
+
+  - it: fails when the onboarding poll interval is below the minimum
+    set:
+      onboarding.enabled: true
+      onboarding.pollIntervalSeconds: 1
+    asserts:
+      - failedTemplate:
+          errorMessageContains: "pollIntervalSeconds"
+
   - it: fails when operator mode is enabled without controllerClass
     values:
       - operator-values.yaml

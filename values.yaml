@@ -36,6 +36,40 @@ bootstrap:
   configKey: config.yaml
   soulKey: SOUL.md
 
+# Optional onboarding gate. When enabled, an `onboarding-gate` init container
+# runs after `bootstrap-config` and holds the gateway until the declared
+# requirements have been satisfied once. Exec into the init container to run
+# the normal interactive Hermes setup commands while it waits.
+#
+# Requires persistence.enabled=true: interactive setup and the completion
+# latch ($HERMES_HOME/.helm-onboarding-complete.json) must survive pod
+# replacement.
+onboarding:
+  # Disabled by default for backward compatibility.
+  enabled: false
+
+  requirements:
+    # Require a usable local LLM provider configuration.
+    provider: true
+
+    # Platforms that must be locally configured before first startup.
+    # Supported values: photon, telegram, discord.
+    platforms: []
+
+  # Maximum time allowed for one validation attempt. This bounds internal
+  # provider resolution if an upstream implementation attempts a refresh.
+  validationTimeoutSeconds: 15
+
+  # Delay between unsuccessful validation attempts.
+  pollIntervalSeconds: 10
+
+  # Optional init-container resources.
+  resources: {}
+
+# When non-null, render spec.progressDeadlineSeconds on the Deployment.
+# Interactive onboarding commonly warrants an override such as 3600.
+progressDeadlineSeconds: null
+
 config:
   # Raw YAML string rendered via tpl. When non-empty, it takes precedence over
   # config.values.

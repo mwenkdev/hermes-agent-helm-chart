@@ -9,7 +9,7 @@ The chart defaults to the official `nousresearch/hermes-agent` image. No image i
 
 In its default (direct) mode the chart renders:
 
-- a `Deployment` running `hermes gateway run`, with an init container that seeds `config.yaml` and optional `SOUL.md` into `HERMES_HOME`
+- a `Deployment` running `hermes gateway run`, with an init container that seeds `config.yaml` and optional `SOUL.md` into `HERMES_HOME`, plus an optional [onboarding gate](#onboarding-gate) init container
 - a `PersistentVolumeClaim` for `HERMES_HOME` (enabled by default)
 - a `ConfigMap` for bootstrap content, and a `Secret` when inline secret values are set
 - a `ServiceAccount` (created by default)
@@ -76,6 +76,8 @@ helm install hermes oci://ghcr.io/mwenkdev/hermes-agent \
 | `networkPolicy.enabled` | `false` | |
 | `pdb.enabled` | `false` | |
 | `npmPackages` | `[]` | Installed into the volume, exposed via `PATH` and `NODE_PATH` |
+| `onboarding.enabled` | `false` | See [Onboarding gate](#onboarding-gate) |
+| `progressDeadlineSeconds` | `null` | Rendered only when set |
 | `probes.liveness` / `readiness` / `startup` | `{}` | Raw probe specs copied onto the container |
 | `resources` | `{}` | See [Resources](#resources) |
 
@@ -164,6 +166,99 @@ ingress:
 
 For Istio, `virtualService.enabled=true` requires at least one entry in both `virtualService.gateways` and `virtualService.hosts`.
 
+## Onboarding gate
+
+A new Hermes instance usually still needs an LLM provider and one or more messaging platforms configured interactively. Without a gate the gateway starts anyway and looks deployed while being unusable.
+
+`onboarding.enabled=true` adds an `onboarding-gate` init container that runs after `bootstrap-config` and holds the gateway until the declared requirements have been satisfied **once**.
+
+```yaml
+onboarding:
+  enabled: true
+  requirements:
+    provider: true
+    platforms:
+      - photon
+      - telegram
+  validationTimeoutSeconds: 15
+  pollIntervalSeconds: 10
+
+progressDeadlineSeconds: 3600
+```
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `onboarding.enabled` | `false` | Requires `persistence.enabled=true` |
+| `onboarding.requirements.provider` | `true` | Require a usable local LLM provider configuration |
+| `onboarding.requirements.platforms` | `[]` | Any of `photon`, `telegram`, `discord` |
+| `onboarding.validationTimeoutSeconds` | `15` | Bounds one validation attempt |
+| `onboarding.pollIntervalSeconds` | `10` | Delay between unsuccessful attempts |
+| `onboarding.resources` | `{}` | Init-container resources |
+
+The requirement list declares *which* Hermes configuration must exist. It does not configure or enable anything — actual configuration still lives in `config.yaml`, environment/secrets, or interactive Hermes setup, so there is only one source of truth.
+
+### How it works
+
+1. The gate reuses the official image, the same `HERMES_HOME` volume, and the same env/`envFrom` as the gateway, so it resolves exactly the credentials the gateway will.
+2. If a completion latch at `$HERMES_HOME/.helm-onboarding-complete.json` matches the current requirements, it exits immediately — no provider resolution, no external calls.
+3. Otherwise `check.py` validates the required provider and platforms against Hermes' own configuration and provider/platform logic. It never sends a model prompt and never proves that a remote API is reachable.
+4. On success it atomically writes the latch (requirement names only — never tokens, phone numbers, user ids or account details) and exits, letting the gateway start.
+5. Otherwise it logs the missing items and retries every `pollIntervalSeconds`. Init containers have no inherent timeout, so it can wait for a human indefinitely.
+
+The latch means an ordinary restart during a provider or messaging outage is not blocked. Changing the required platform set invalidates the latch and intentionally blocks the next rollout until the new requirement is configured. A Hermes image upgrade alone does not invalidate it; validator/image compatibility is covered by CI instead.
+
+### Operator runbook
+
+```sh
+kubectl -n hermes get pods
+kubectl -n hermes logs <pod-name> -c onboarding-gate -f
+kubectl -n hermes exec -it <pod-name> -c onboarding-gate -- sh
+```
+
+Inside the container, run the usual setup commands, for example:
+
+```sh
+hermes model
+hermes photon setup
+```
+
+Then exit the shell. The wait loop notices the new state within `pollIntervalSeconds`, writes the latch, and the gateway starts — no manual pod restart required.
+
+Diagnose a specific failure with:
+
+```sh
+/opt/hermes/.venv/bin/python /opt/hermes-chart/onboarding/check.py \
+  --requirements /opt/hermes-chart/onboarding/requirements.json --force --json
+```
+
+The scripts are mounted only into the gate, not into the main container. To re-run onboarding on an already-started instance, remove or rename the latch from an exec session and restart the pod:
+
+```sh
+mv /opt/data/.helm-onboarding-complete.json /opt/data/.helm-onboarding-complete.json.bak
+```
+
+> [!WARNING]
+> Editing the PVC is an operator action. Helm never deletes the latch or any other state file, and disabling `onboarding` later leaves the (harmless) latch in place.
+
+### Exit codes and diagnostics
+
+| Code | Meaning | Gate behavior |
+| ---: | --- | --- |
+| `0` | Complete, or a matching latch exists | Init container exits successfully |
+| `10` | Configuration incomplete | Logs the missing items, sleeps, retries |
+| `20` | Validator/configuration error | Logged prominently as a chart problem, then retried |
+| `124` | Attempt timed out | Logged, retried; no latch is written |
+
+A timeout is never treated as success. Unchanged diagnostics are deduplicated to a short heartbeat and reprinted in full periodically.
+
+### Existing installs and Argo CD
+
+Onboarding defaults to disabled, so current releases render exactly as before. When it is enabled on an already-configured instance, the gate finds no latch, validates the existing persistent configuration, writes the latch, and starts the gateway — setup is not repeated.
+
+`progressDeadlineSeconds` only changes when the `Deployment` reports stalled progress; it never stops the gate from waiting. Argo CD may show the Deployment as progressing or degraded past that deadline while the init container is still happily available for onboarding. The chart deliberately sets no pod `activeDeadlineSeconds`.
+
+The dashboard and any `Service` are unavailable until onboarding completes; operator access during onboarding is through `kubectl exec` and logs. No onboarding-specific Service, Ingress or setup endpoint is created.
+
 ## Browser shared memory
 
 Chromium and Playwright need more shared memory than the default container allocation. Enable a memory-backed volume at `/dev/shm`:
@@ -236,7 +331,16 @@ helm template hermes .
 helm template hermes . -f tests/test-values.yaml
 ```
 
-Test suites live in `tests/*_test.yaml` with scenario values in `tests/*-values.yaml`. CI runs `helm lint .` and `helm unittest .` on pull requests to `main`.
+Test suites live in `tests/*_test.yaml` with scenario values in `tests/*-values.yaml`.
+
+The onboarding validator has its own tests:
+
+```bash
+python -m pytest tests/onboarding                 # adapters mocked, no image needed
+tests/onboarding/image_smoke_test.sh              # runs check.py inside the official image
+```
+
+CI runs `helm lint .`, `helm unittest .`, the validator unit tests, and the image compatibility smoke test on pull requests to `main`.
 
 ## Credits
 This chart was originally based on the community Helm chart by MichaelSp, which was itself based on the chart by realsigridjin. It has since been substantially updated and is now maintained independently.

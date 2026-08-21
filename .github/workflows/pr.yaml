@@ -28,3 +28,32 @@ jobs:
 
       - name: Run unit tests
         run: helm unittest .
+
+  onboarding-validator:
+    name: Onboarding Validator Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: python -m pip install --upgrade pytest
+
+      - name: Run validator unit tests
+        run: python -m pytest tests/onboarding -q
+
+  onboarding-image-compat:
+    name: Onboarding Validator / Image Compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      # Runs files/onboarding/check.py inside the exact official Hermes image
+      # the chart deploys, so a moved upstream internal module is caught before
+      # a chart release rather than at first gated startup.
+      - name: Smoke test the validator against the official image
+        run: tests/onboarding/image_smoke_test.sh

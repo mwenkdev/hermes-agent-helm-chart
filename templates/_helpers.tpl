@@ -79,6 +79,112 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{- define "hermes-agent.onboardingConfigMapName" -}}
+{{- printf "%s-onboarding" (include "hermes-agent.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "hermes-agent.onboardingMountPath" -}}
+/opt/hermes-chart/onboarding
+{{- end -}}
+
+{{/*
+Normalized onboarding requirements document, consumed by check.py.
+Platform names are lowercased, de-duplicated and sorted so the requirements
+hash (and therefore the completion latch) is order-insensitive.
+*/}}
+{{- define "hermes-agent.onboardingRequirements" -}}
+{{- $platforms := list -}}
+{{- range .Values.onboarding.requirements.platforms -}}
+  {{- $name := . | toString | trim | lower -}}
+  {{- if not (has $name $platforms) -}}
+    {{- $platforms = append $platforms $name -}}
+  {{- end -}}
+{{- end -}}
+{{- dict "schemaVersion" 1 "validatorVersion" 1 "provider" .Values.onboarding.requirements.provider "platforms" (sortAlpha $platforms) | toJson -}}
+{{- end -}}
+
+{{/*
+Container environment shared by the gateway container and the onboarding
+gate. Rendered at column 0; callers apply their own `nindent`. Keeping this
+in one place prevents the gate from resolving a different credential set
+than the gateway, which would make the validator report a false negative.
+*/}}
+{{- define "hermes-agent.containerEnv" -}}
+{{- $mountPath := .Values.persistence.mountPath -}}
+{{- $npmEnabled := gt (len .Values.npmPackages) 0 -}}
+- name: S6_YES_I_WANT_A_WORLD_WRITABLE_RUN_BECAUSE_KUBERNETES
+  value: "1"
+- name: HERMES_HOME
+  value: {{ $mountPath | quote }}
+- name: HOME
+  value: {{ printf "%s/home" $mountPath | quote }}
+{{- if $npmEnabled }}
+- name: PATH
+  value: {{ printf "%s/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" $mountPath | quote }}
+- name: NODE_PATH
+  value: {{ printf "%s/npm-global/lib/node_modules" $mountPath | quote }}
+- name: NPM_CONFIG_PREFIX
+  value: {{ printf "%s/npm-global" $mountPath | quote }}
+{{- end }}
+{{- range $key, $value := .Values.env }}
+- name: {{ $key }}
+  value: {{ printf "%v" $value | quote }}
+{{- end }}
+{{- if .Values.apiServer.enabled }}
+- name: API_SERVER_ENABLED
+  value: "true"
+- name: API_SERVER_HOST
+  value: {{ .Values.apiServer.host | quote }}
+- name: API_SERVER_PORT
+  value: {{ .Values.apiServer.port | quote }}
+- name: API_SERVER_CORS_ORIGINS
+  value: {{ .Values.apiServer.corsOrigins | quote }}
+- name: API_SERVER_MODEL_NAME
+  value: {{ .Values.apiServer.modelName | quote }}
+{{- end }}
+{{- if .Values.webhook.enabled }}
+- name: WEBHOOK_ENABLED
+  value: "true"
+- name: WEBHOOK_PORT
+  value: {{ .Values.webhook.port | quote }}
+{{- end }}
+{{- if .Values.telegramWebhook.enabled }}
+- name: TELEGRAM_WEBHOOK_URL
+  value: {{ .Values.telegramWebhook.url | quote }}
+- name: TELEGRAM_WEBHOOK_PORT
+  value: {{ .Values.telegramWebhook.port | quote }}
+{{- end }}
+{{- with .Values.extraEnv }}
+{{ toYaml . }}
+{{- end }}
+{{- end -}}
+
+{{/*
+envFrom sources shared by the gateway container and the onboarding gate.
+Renders nothing when no secret or extra source applies.
+*/}}
+{{- define "hermes-agent.containerEnvFrom" -}}
+{{- $hasInlineSecretValues := false -}}
+{{- range $key, $value := .Values.secrets }}
+  {{- if and (ne $key "existingSecret") (ne $key "annotations") (ne (printf "%v" $value) "") -}}
+    {{- $hasInlineSecretValues = true -}}
+  {{- end -}}
+{{- end -}}
+{{- if or .Values.externalSecret.enabled .Values.secrets.existingSecret .Values.extraEnvFrom $hasInlineSecretValues }}
+{{- if or .Values.externalSecret.enabled .Values.secrets.existingSecret }}
+- secretRef:
+    name: {{ include "hermes-agent.secretName" . }}
+{{- else }}
+- secretRef:
+    name: {{ include "hermes-agent.secretName" . }}
+    optional: true
+{{- end }}
+{{- with .Values.extraEnvFrom }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
 {{- define "hermes-agent.pvcName" -}}
 {{- printf "%s-data" (include "hermes-agent.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
