@@ -4,7 +4,7 @@ fullnameOverride: ""
 image:
   repository: nousresearch/hermes-agent
   # Yes, this was set to appVersion, but moved it here so we're nice and explicit on which tag we're using
-  tag: "v2026.8.3"
+  tag: "v2026.8.19"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
